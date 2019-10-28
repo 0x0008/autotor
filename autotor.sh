@@ -1,34 +1,27 @@
 #!/bin/sh
 
-WATCH="$HOME/Downloads"
-TOR_BASE=${TOR_BASE:-${HOME}/tor}
+watch="$HOME/Downloads"
+tor_base=${tor_base:-${HOME}/tor}
+period="2"
 
 activate_venv() {
 	. $HOME/bencode/bin/activate || exit 1
 }
 
-usage() {
-	cat >&2 <<EOF
-usage: autotor.sh WATCH TARGET
-this unreachable string is a lie
-EOF
-	exit 1
+nap() {
+    sleep "$period" &
+    sleeper_pid="$!"
+    wait
+    sleeper_pid=
+}
+
+event_check() {
+    [ -n "$sleeper_pid" ] && kill "$sleeper_pid"
 }
 
 find_torrents() {
-	find $WATCH -name '*.torrent' | while read torrent; do
+	find $watch -name '*.torrent' | while read torrent; do
 		mv_torrent "$torrent"
-	done
-}
-
-wait_torrents() {
-	# -e create has a race condition with a 0len file. Wait 200ms in python.
-	inotifywait -m -e create -e moved_to --format "%f" $WATCH | \
-	while read filename; do
-		[ -z "$filename" ] && continue
-		case $filename in
-			*.torrent) mv_torrent "${WATCH}/${filename}" ;;
-		esac
 	done
 }
 
@@ -40,16 +33,21 @@ mv_torrent() {
 		return 1
 	fi
 	_target=$(case $_host in
-		please.passthepopcorn.me) echo $TOR_BASE/ptp ;;
-		bibliotik.*) echo $TOR_BASE/bib ;;
-		flacsfor.me) echo $TOR_BASE/red ;;
-		landof.tv)   echo $TOR_BASE/btn ;;
-		*)           echo $TOR_BASE/other ;;
+		please.passthepopcorn.me) echo $tor_base/ptp ;;
+		bibliotik.*) echo $tor_base/bib ;;
+		flacsfor.me) echo $tor_base/red ;;
+		landof.tv)   echo $tor_base/btn ;;
+		*)           echo $tor_base/other ;;
 	esac)
 	echo mv "$_torrent" $_target
 	mv "$_torrent" $_target
 }
 
+trap event_check hup
+
 activate_venv
-find_torrents
-wait_torrents
+
+while :; do
+	nap
+	find_torrents
+done
